@@ -1,0 +1,86 @@
+branches:
+  only:
+    - master
+    - develop
+    - /win*/
+
+# https://www.appveyor.com/docs/lang/nodejs-iojs/
+environment:
+  # Test against the same version of Node.js version as included in Electron
+  nodejs_version: "8.2.1"
+  # encode secure variables which will NOT be used
+  # in pull requests
+  # https://www.appveyor.com/docs/build-configuration/#secure-variables
+  # the variables can be encrypted at
+  # https://ci.appveyor.com/tools/encrypt
+  ci_json:
+    secure: tf3fK5S5Gh5HGUcDo3eGw7nqdcFU/4A+2s3JJovmn/eA0p9dEspjPFp7G1I9BxdUc4OoCeJ3dSSrCQ1BPIzb/bzK6aQqAZQWNcJ1sanoIiF0QUPbiW40Js3xpWylIh8qutVoaWtZz5a1ygg9sJmAYR7qB5+aQqQNA55TBKkUCydXpnDBfWuagb6d/7cblULsXasvvji3RIoxWTKd8HmaD/xxqONjPAJ3IJsiDTaWc5S9bAgV8/IYa7YZaQm5vpTTsWU5IGwkA1l9yMu7j+7BSNK9esvAYyKsx7kUV9jiVFo=
+  aws_credentials_json:
+    secure: ttGzd2/rW+i8H+pozcFxzZKU07B5INL8+LjD4vCOKes+tI6EaKhrLvAQ9xT7r+e1oTWbC8olZQ96ZZ8P5Ve8pIpG8oe1ITMs5f50iXaKULfwIcJOm+G8a3pkMRZOWa0wGs7/sKtRSyIpMFRfCOIl8TePBKEgeRtVzixBqSuyYLn/u2dz0z8uHeJDq/H1kJlI
+  CF_DOMAIN: "cypress.io"
+  CF_EMAIL:
+    secure: +kZOcImCZVZJv/e/hQc3gvJ6xXSH88qg46cMwKn8mRo=
+  CF_TOKEN:
+    secure: d8SQfJ2r6qrKDjYWoFg3AzgY7aL6hTuE5OIlRr0TXkcXkZzdmYCujfzIYcCQfpZg
+
+# https://www.appveyor.com/docs/build-cache/
+# hmm, seems there is NPM on windows problem
+# with installing over cached folder
+# https://github.com/npm/npm/issues/17747
+# cache:
+#   - node_modules
+#   # todo: cache node_modules in each package
+
+# Install scripts. (runs after repo cloning)
+install:
+  - ps: Install-Product node $env:nodejs_version
+  - npm run check-node-version
+  # NPM v3 has flaky permission issues on Windows
+  - npm install -g npm@5
+  - npm install -g @bahmutov/print-env
+  # Output useful info for debugging.
+  - node --version
+  - npm --version
+  - print-env APPVEYOR
+  # clean cache to prevent install permission issues
+  - npm cache clean --force
+  # install root modules only
+  - npm install --ignore-scripts
+  - .\node_modules\.bin\print-arch
+  # because we skipped scripts, we need to do
+  # everything from "postinstall" script as commands
+  - npm run link
+  # install every package one by one
+  - npm run all install -- --serial || npm run all install -- --serial
+  # - npm prune
+  # - npm run all prune -- --serial
+  - npm run all build -- --serial
+
+# Post-install test scripts.
+test_script:
+  # Output useful info for debugging.
+  - node --version
+  - npm --version
+  - echo Commit message
+  - echo %APPVEYOR_REPO_COMMIT_MESSAGE%
+  - echo body of commit message, if any
+  - echo %APPVEYOR_REPO_COMMIT_MESSAGE_EXTENDED%
+  - 7z
+  - cd packages/launcher && node index.js && cd ../..
+  # make sure mocha runs
+  - npm run test-mocha
+  # make sure our snapshots are compared correctly
+  # - npm run test-mocha-snapshot
+  # the other larger tests
+  - echo Building Windows NPM package %NEXT_DEV_VERSION%
+  - npm --no-git-tag-version version %NEXT_DEV_VERSION%
+  - cd cli
+  - npm run build
+  - cd build
+  - npm pack
+  - cd ../..
+
+  - node ./scripts/win-appveyor-build.js
+
+# Don't actually build.
+build: off

@@ -1,0 +1,836 @@
+version: 2
+
+defaults: &defaults
+  parallelism: 1
+  working_directory: ~/cypress
+  docker:
+    # the Docker image with Cypress dependencies and Chrome browser
+    - image: cypress/browsers:chrome64
+      environment:
+        ## set specific timezone
+        TZ: "/usr/share/zoneinfo/America/New_York"
+
+        ## store artifacts here
+        CIRCLE_ARTIFACTS: /tmp/artifacts
+
+        ## set so that e2e tests are consistent
+        COLUMNS: 100
+        LINES: 24
+
+jobs:
+  ## code checkout and NPM installs
+  build:
+    <<: *defaults
+    steps:
+      - checkout
+
+      - run:
+          name: Print working folder
+          command: echo $PWD
+      - run:
+          name: print global NPM cache path
+          command: echo $(npm -g bin)
+      - run:
+          name: print Node version
+          command: node -v
+      - run:
+          name: print NPM version
+          command: npm -v
+      - run: npm run check-node-version
+
+      ## make sure the TERM is set to 'xterm' in node
+      ## else colors (and tests) will fail
+      ## See the following information
+      ##   * http://andykdocs.de/development/Docker/Fixing+the+Docker+TERM+variable+issue
+      ##   * https://unix.stackexchange.com/questions/43945/whats-the-difference-between-various-term-variables
+      - run:
+          name: Checking TERM and COLUMNS are set
+          command: |
+            node -e 'assert.ok(process.env.TERM === "xterm", `process.env.TERM=${process.env.TERM} and must be set to "xterm" for Docker to work`)'
+            node -e 'assert.ok(process.env.COLUMNS === "100", `process.env.COLUMNS=${process.env.COLUMNS} must be set to 100 for snapshots to pass`)'
+            node -e 'console.log("stdout.isTTY?", process.stdout.isTTY)'
+            node -e 'console.log("stderr.isTTY?", process.stderr.isTTY)'
+
+      # need to restore a separate cache for each package.json
+      - restore_cache:
+          key: v5-{{ .Branch }}-cli-deps
+      - restore_cache:
+          key: v5-{{ .Branch }}-root-deps
+      - restore_cache:
+          key: v5-{{ .Branch }}-deps-coffee
+      - restore_cache:
+          key: v5-{{ .Branch }}-deps-desktop-gui
+      - restore_cache:
+          key: v5-{{ .Branch }}-deps-driver
+      - restore_cache:
+          key: v5-{{ .Branch }}-deps-example
+      - restore_cache:
+          key: v7-{{ .Branch }}-deps-electron
+      - restore_cache:
+          key: v5-{{ .Branch }}-deps-extension
+      - restore_cache:
+          key: v5-{{ .Branch }}-deps-https-proxy
+      - restore_cache:
+          key: v5-{{ .Branch }}-deps-launcher
+      - restore_cache:
+          key: v5-{{ .Branch }}-deps-reporter
+      - restore_cache:
+          key: v5-{{ .Branch }}-deps-runner
+      - restore_cache:
+          key: v5-{{ .Branch }}-deps-server
+      - restore_cache:
+          key: v5-{{ .Branch }}-deps-socket
+      - restore_cache:
+          key: v5-{{ .Branch }}-deps-static
+      - restore_cache:
+          key: v5-{{ .Branch }}-deps-ts
+
+      # show what is already cached globally
+      - run: ls $(npm -g bin)
+      - run: ls $(npm -g bin)/../lib/node_modules
+
+      # only installs the root dependencies, without going into packages
+      # via postinstall script
+      - run: npm install --ignore-scripts
+      - run:
+          name: Top level packages
+          command: npm ls --depth=0 || true
+
+      ## symlink all of our sub packages in node_modules
+      - run: npm run link
+
+      ## now install all of the sub packages node_modules
+      - run: npm run all install -- --serial
+      - run: npm run all prune
+
+      # save each node_modules folder per package
+      - save_cache:
+          key: v5-{{ .Branch }}-cli-deps-{{ checksum "cli/package.json" }}
+          paths:
+            - cli/node_modules
+      - save_cache:
+          key: v5-{{ .Branch }}-root-deps-{{ checksum "package.json" }}
+          paths:
+            - node_modules
+      - save_cache:
+          key: v5-{{ .Branch }}-deps-coffee-{{ checksum "packages/coffee/package.json" }}
+          paths:
+            - packages/coffee/node_modules
+      - save_cache:
+          key: v5-{{ .Branch }}-deps-desktop-gui-{{ checksum "packages/desktop-gui/package.json" }}
+          paths:
+            - packages/desktop-gui/node_modules
+      - save_cache:
+          key: v5-{{ .Branch }}-deps-driver-{{ checksum "packages/driver/package.json" }}
+          paths:
+            - packages/driver/node_modules
+      - save_cache:
+          key: v5-{{ .Branch }}-deps-example-{{ checksum "packages/example/package.json" }}
+          paths:
+            - packages/example/node_modules
+      - save_cache:
+          key: v7-{{ .Branch }}-deps-electron-{{ checksum "packages/electron/package.json" }}
+          paths:
+            - packages/electron/node_modules
+            - ~/.cache/electron
+            - ~/.electron
+      - save_cache:
+          key: v5-{{ .Branch }}-deps-extension-{{ checksum "packages/extension/package.json" }}
+          paths:
+            - packages/extension/node_modules
+      - save_cache:
+          key: v5-{{ .Branch }}-deps-https-proxy-{{ checksum "packages/https-proxy/package.json" }}
+          paths:
+            - packages/https-proxy/node_modules
+      - save_cache:
+          key: v5-{{ .Branch }}-deps-launcher-{{ checksum "packages/launcher/package.json" }}
+          paths:
+            - packages/launcher/node_modules
+      - save_cache:
+          key: v5-{{ .Branch }}-deps-reporter-{{ checksum "packages/reporter/package.json" }}
+          paths:
+            - packages/reporter/node_modules
+      - save_cache:
+          key: v5-{{ .Branch }}-deps-runner-{{ checksum "packages/runner/package.json" }}
+          paths:
+            - packages/runner/node_modules
+      - save_cache:
+          key: v5-{{ .Branch }}-deps-server-{{ checksum "packages/server/package.json" }}
+          paths:
+            - packages/server/node_modules
+      - save_cache:
+          key: v5-{{ .Branch }}-deps-socket-{{ checksum "packages/socket/package.json" }}
+          paths:
+            - packages/socket/node_modules
+      - save_cache:
+          key: v5-{{ .Branch }}-deps-static-{{ checksum "packages/static/package.json" }}
+          paths:
+            - packages/static/node_modules
+      - save_cache:
+          key: v5-{{ .Branch }}-deps-ts-{{ checksum "packages/ts/package.json" }}
+          paths:
+            - packages/ts/node_modules
+
+      - run: npm run stop-only
+      ## now go build all of subpackages
+      - run: npm run build
+
+      ## save entire folder as artifact for other jobs to continue
+      ## hmm, do not see a good way to cache it, since all code
+      ## might change
+      - save_cache:
+          key: cypress-{{ .Branch }}-{{ .Revision }}-{{ checksum "circle.yml" }}
+          paths:
+            - /root/cypress
+
+  lint:
+    <<: *defaults
+    steps:
+      - restore_cache:
+          key: cypress-{{ .Branch }}-{{ .Revision }}
+      - run: npm run lint
+      - run: npm run all lint
+
+  "unit-tests":
+    <<: *defaults
+    parallelism: 1
+    steps:
+      - restore_cache:
+          key: cypress-{{ .Branch }}-{{ .Revision }}
+      # make sure mocha runs
+      - run: npm run test-mocha
+      # make sure our snapshots are compared correctly
+      - run: npm run test-mocha-snapshot
+      # run unit tests from individual packages
+      - run: npm run all test -- --package cli
+      - run: npm run all test -- --package electron
+      - run: npm run all test -- --package extension
+      - run: npm run all test -- --package https-proxy
+      - run: npm run all test -- --package launcher
+      # how to pass Mocha reporter through zunder?
+      - run: npm run all test -- --package reporter
+      - run: npm run all test -- --package runner
+      - run: npm run all test -- --package socket
+      - run: npm run all test -- --package static
+      - store_test_results:
+          path: /tmp/cypress
+
+  "server-unit-tests":
+    <<: *defaults
+    parallelism: 2
+    steps:
+      - restore_cache:
+          key: cypress-{{ .Branch }}-{{ .Revision }}
+      - run: npm run all test-unit -- --package server
+      - store_test_results:
+          path: /tmp/cypress
+
+  "server-integration-tests":
+    <<: *defaults
+    parallelism: 2
+    steps:
+      - restore_cache:
+          key: cypress-{{ .Branch }}-{{ .Revision }}
+      - run: npm run all test-integration -- --package server
+      - store_test_results:
+          path: /tmp/cypress
+
+  "server-e2e-tests-1":
+    <<: *defaults
+    steps:
+      - restore_cache:
+          key: cypress-{{ .Branch }}-{{ .Revision }}
+      - run:
+          command: npm run test-e2e -- --parallel 7 --index 0
+          working_directory: packages/server
+      - store_test_results:
+          path: /tmp/cypress
+
+  "server-e2e-tests-2":
+    <<: *defaults
+    steps:
+      - restore_cache:
+          key: cypress-{{ .Branch }}-{{ .Revision }}
+      - run:
+          command: npm run test-e2e -- --parallel 7 --index 1
+          working_directory: packages/server
+      - store_test_results:
+          path: /tmp/cypress
+
+  "server-e2e-tests-3":
+    <<: *defaults
+    steps:
+      - restore_cache:
+          key: cypress-{{ .Branch }}-{{ .Revision }}
+      - run:
+          command: npm run test-e2e -- --parallel 7 --index 2
+          working_directory: packages/server
+      - store_test_results:
+          path: /tmp/cypress
+
+  "server-e2e-tests-4":
+    <<: *defaults
+    steps:
+      - restore_cache:
+          key: cypress-{{ .Branch }}-{{ .Revision }}
+      - run:
+          command: npm run test-e2e -- --parallel 7 --index 3
+          working_directory: packages/server
+      - store_test_results:
+          path: /tmp/cypress
+
+  "server-e2e-tests-5":
+    <<: *defaults
+    steps:
+      - restore_cache:
+          key: cypress-{{ .Branch }}-{{ .Revision }}
+      - run:
+          command: npm run test-e2e -- --parallel 7 --index 4
+          working_directory: packages/server
+      - store_test_results:
+          path: /tmp/cypress
+
+  "server-e2e-tests-6":
+    <<: *defaults
+    steps:
+      - restore_cache:
+          key: cypress-{{ .Branch }}-{{ .Revision }}
+      - run:
+          command: npm run test-e2e -- --parallel 7 --index 5
+          working_directory: packages/server
+      - store_test_results:
+          path: /tmp/cypress
+
+  "server-e2e-tests-7":
+    <<: *defaults
+    steps:
+      - restore_cache:
+          key: cypress-{{ .Branch }}-{{ .Revision }}
+      - run:
+          command: npm run test-e2e -- --parallel 7 --index 6
+          working_directory: packages/server
+      - store_test_results:
+          path: /tmp/cypress
+
+  "driver-integration-tests-1":
+    <<: *defaults
+    steps:
+      - restore_cache:
+          key: cypress-{{ .Branch }}-{{ .Revision }}
+      - run:
+          command: npm start
+          background: true
+          working_directory: packages/driver
+      - run:
+          command: $(npm bin)/wait-on http://localhost:3500
+          working_directory: packages/driver
+      - run:
+          command: npm run cypress:run -- --parallel 7 --index 0 --browser chrome
+          working_directory: packages/driver
+      - store_test_results:
+          path: /tmp/cypress
+      - store_artifacts:
+          path: /tmp/artifacts
+
+  "driver-integration-tests-2":
+    <<: *defaults
+    steps:
+      - restore_cache:
+          key: cypress-{{ .Branch }}-{{ .Revision }}
+      - run:
+          command: npm start
+          working_directory: packages/driver
+          background: true
+      - run:
+          command: $(npm bin)/wait-on http://localhost:3500
+          working_directory: packages/driver
+      - run:
+          command: npm run cypress:run -- --parallel 7 --index 1 --browser chrome
+          working_directory: packages/driver
+      - store_test_results:
+          path: /tmp/cypress
+      - store_artifacts:
+          path: /tmp/artifacts
+
+  "driver-integration-tests-3":
+    <<: *defaults
+    steps:
+      - restore_cache:
+          key: cypress-{{ .Branch }}-{{ .Revision }}
+      - run:
+          command: npm start
+          working_directory: packages/driver
+          background: true
+      - run:
+          command: $(npm bin)/wait-on http://localhost:3500
+          working_directory: packages/driver
+      - run:
+          command: npm run cypress:run -- --parallel 7 --index 2 --browser chrome
+          working_directory: packages/driver
+      - store_test_results:
+          path: /tmp/cypress
+      - store_artifacts:
+          path: /tmp/artifacts
+
+  "driver-integration-tests-4":
+    <<: *defaults
+    steps:
+      - restore_cache:
+          key: cypress-{{ .Branch }}-{{ .Revision }}
+      - run:
+          command: npm start
+          working_directory: packages/driver
+          background: true
+      - run:
+          command: $(npm bin)/wait-on http://localhost:3500
+          working_directory: packages/driver
+      - run:
+          command: npm run cypress:run -- --parallel 7 --index 3 --browser chrome
+          working_directory: packages/driver
+      - store_test_results:
+          path: /tmp/cypress
+      - store_artifacts:
+          path: /tmp/artifacts
+
+  "driver-integration-tests-5":
+    <<: *defaults
+    steps:
+      - restore_cache:
+          key: cypress-{{ .Branch }}-{{ .Revision }}
+      - run:
+          command: npm start
+          working_directory: packages/driver
+          background: true
+      - run:
+          command: $(npm bin)/wait-on http://localhost:3500
+          working_directory: packages/driver
+      - run:
+          command: npm run cypress:run -- --parallel 7 --index 4 --browser chrome
+          working_directory: packages/driver
+      - store_test_results:
+          path: /tmp/cypress
+      - store_artifacts:
+          path: /tmp/artifacts
+
+  "driver-integration-tests-6":
+    <<: *defaults
+    steps:
+      - restore_cache:
+          key: cypress-{{ .Branch }}-{{ .Revision }}
+      - run:
+          command: npm start
+          working_directory: packages/driver
+          background: true
+      - run:
+          command: $(npm bin)/wait-on http://localhost:3500
+          working_directory: packages/driver
+      - run:
+          command: npm run cypress:run -- --parallel 7 --index 5 --browser chrome
+          working_directory: packages/driver
+      - store_test_results:
+          path: /tmp/cypress
+      - store_artifacts:
+          path: /tmp/artifacts
+
+  "driver-integration-tests-7":
+    <<: *defaults
+    steps:
+      - restore_cache:
+          key: cypress-{{ .Branch }}-{{ .Revision }}
+      - run:
+          command: npm start
+          working_directory: packages/driver
+          background: true
+      - run:
+          command: $(npm bin)/wait-on http://localhost:3500
+          working_directory: packages/driver
+      - run:
+          command: npm run cypress:run -- --parallel 7 --index 6 --browser chrome
+          working_directory: packages/driver
+      - store_test_results:
+          path: /tmp/cypress
+      - store_artifacts:
+          path: /tmp/artifacts
+
+  "desktop-gui-integration-tests-1":
+    <<: *defaults
+    steps:
+      - restore_cache:
+          key: cypress-{{ .Branch }}-{{ .Revision }}
+      - run:
+          command: npm run build-prod
+          working_directory: packages/desktop-gui
+      - run:
+          command: npm run cypress:run -- --parallel 3 --index 0
+          working_directory: packages/desktop-gui
+      - store_test_results:
+          path: /tmp/cypress
+      - store_artifacts:
+          path: /tmp/artifacts
+
+  "desktop-gui-integration-tests-2":
+    <<: *defaults
+    steps:
+      - restore_cache:
+          key: cypress-{{ .Branch }}-{{ .Revision }}
+      - run:
+          command: npm run build-prod
+          working_directory: packages/desktop-gui
+      - run:
+          command: npm run cypress:run -- --parallel 3 --index 1
+          working_directory: packages/desktop-gui
+      - store_test_results:
+          path: /tmp/cypress
+      - store_artifacts:
+          path: /tmp/artifacts
+
+  "desktop-gui-integration-tests-3":
+    <<: *defaults
+    steps:
+      - restore_cache:
+          key: cypress-{{ .Branch }}-{{ .Revision }}
+      - run:
+          command: npm run build-prod
+          working_directory: packages/desktop-gui
+      - run:
+          command: npm run cypress:run -- --parallel 3 --index 2
+          working_directory: packages/desktop-gui
+      - store_test_results:
+          path: /tmp/cypress
+      - store_artifacts:
+          path: /tmp/artifacts
+
+  "run-launcher":
+    <<: *defaults
+    steps:
+      - restore_cache:
+          key: cypress-{{ .Branch }}-{{ .Revision }}
+      - run:
+          command: node index.js
+          working_directory: packages/launcher
+
+  "build-binary":
+    <<: *defaults
+    steps:
+      - restore_cache:
+          key: cypress-{{ .Branch }}-{{ .Revision }}
+      - run: $(npm bin)/print-arch
+      - run: npm run binary-build -- --platform linux --version $NEXT_DEV_VERSION
+      - run: npm run binary-zip -- --platform linux
+      - run: ls -l *.zip
+      - run:
+          name: upload unique binary
+          command: |
+            node scripts/binary.js upload-unique-binary \
+              --file cypress.zip \
+              --version $NEXT_DEV_VERSION
+      - run: cat binary-url.json
+      - run: mkdir /tmp/urls
+      - run: cp binary-url.json /tmp/urls
+      - run: cp cypress.zip /tmp/urls
+      - run: ls /tmp/urls
+      - persist_to_workspace:
+          root: /tmp/urls
+          paths:
+            - binary-url.json
+            - cypress.zip
+
+  "test-kitchensink-against-staging":
+    <<: *defaults
+    steps:
+      - restore_cache:
+          key: cypress-{{ .Branch }}-{{ .Revision }}
+      - run:
+          name: Cloning test project
+          command: git clone https://github.com/cypress-io/cypress-example-kitchensink.git /tmp/repo
+      - run:
+          name: Install prod dependencies
+          command: npm install --production
+          working_directory: /tmp/repo
+      - run:
+          name: Example server
+          command: npm start
+          working_directory: /tmp/repo
+          background: true
+      - run:
+          name: Run Kitchensink example project
+          command: |
+            CYPRESS_ENV=staging \
+            CYPRESS_PROJECT_ID=$TEST_KITCHENSINK_PROJECT_ID \
+            CYPRESS_RECORD_KEY=$TEST_KITCHENSINK_RECORD_KEY \
+            CYPRESS_video=false \
+            npm run cypress:run -- --project /tmp/repo --record
+
+  "test-against-staging":
+    <<: *defaults
+    steps:
+      - restore_cache:
+          key: cypress-{{ .Branch }}-{{ .Revision }}
+      - run:
+          name: Cloning test project
+          command: git clone https://github.com/cypress-io/cypress-test-tiny.git /tmp/repo
+      - run:
+          name: Run test project
+          command: |
+            CYPRESS_ENV=staging \
+            CYPRESS_PROJECT_ID=$TEST_TINY_PROJECT_ID \
+            CYPRESS_RECORD_KEY=$TEST_TINY_RECORD_KEY \
+            npm run cypress:run -- --project /tmp/repo --record
+
+  "build-npm-package":
+    <<: *defaults
+    steps:
+      - restore_cache:
+          key: cypress-{{ .Branch }}-{{ .Revision }}
+      - run:
+          name: bump NPM version
+          command: npm --no-git-tag-version version $NEXT_DEV_VERSION
+      - run:
+          name: build NPM package
+          working_directory: cli
+          command: npm run build
+      - run:
+          name: list NPM package contents
+          working_directory: cli/build
+          command: npm run size
+      - run:
+          name: pack NPM package
+          working_directory: cli/build
+          command: npm pack
+      - run:
+          name: list created NPM package
+          working_directory: cli/build
+          command: ls -l
+      # created file should have filename cypress-<version>.tgz
+      - run:
+          name: upload NPM package
+          command: |
+            node scripts/binary.js upload-npm-package \
+              --file cli/build/cypress-$NEXT_DEV_VERSION.tgz \
+              --version $NEXT_DEV_VERSION
+      - run: cat npm-package-url.json
+      - run: mkdir /tmp/urls
+      - run: cp cli/build/cypress-$NEXT_DEV_VERSION.tgz /tmp/urls/cypress.tgz
+      - run: cp npm-package-url.json /tmp/urls
+      - run: ls /tmp/urls
+      - persist_to_workspace:
+          root: /tmp/urls
+          paths:
+            - npm-package-url.json
+            - cypress.tgz
+
+  "test-next-version":
+    <<: *defaults
+    steps:
+      - restore_cache:
+          key: cypress-{{ .Branch }}-{{ .Revision }}
+      - attach_workspace:
+          at: /tmp/urls
+      - run: ls -la /tmp/urls
+      - run: cat /tmp/urls/*.json
+      - run: mkdir /tmp/testing
+      - run:
+          name: create dummy package
+          working_directory: /tmp/testing
+          command: npm init -y
+      - run:
+          # install NPM from unique urls
+          name: Install Cypress
+          command: |
+            node scripts/test-unique-npm-and-binary.js \
+              --npm /tmp/urls/npm-package-url.json \
+              --binary /tmp/urls/binary-url.json \
+              --cwd /tmp/testing
+      - run:
+          name: Verify Cypress binary
+          working_directory: /tmp/testing
+          command: $(npm bin)/cypress verify
+      - run:
+          name: Running other test projects with new NPM package and binary
+          command: |
+            node scripts/test-other-projects.js \
+              --npm /tmp/urls/npm-package-url.json \
+              --binary /tmp/urls/binary-url.json \
+              --provider circle
+
+  "test-next-version-locally":
+    <<: *defaults
+    steps:
+      - restore_cache:
+          key: cypress-{{ .Branch }}-{{ .Revision }}
+      - attach_workspace:
+          at: /tmp/urls
+      # make sure we have cypress.zip received
+      - run: ls -l /tmp/urls/cypress.zip
+      # build NPM package
+      - run:
+          command: npm run build
+          working_directory: cli
+      - run: mkdir test-binary
+      - run:
+          name: Create new NPM package
+          working_directory: test-binary
+          command: npm init -y
+      - run:
+          # install NPM from built NPM package folder
+          name: Install Cypress
+          working_directory: test-binary
+          # force installing the freshly built binary
+          command: CYPRESS_INSTALL_BINARY=/tmp/urls/cypress.zip npm i ../cli/build
+      - run:
+          name: Verify Cypress binary
+          working_directory: test-binary
+          command: $(npm bin)/cypress verify
+
+  # install NPM + binary zip and run against staging API
+  "test-binary-against-staging":
+    <<: *defaults
+    steps:
+      - restore_cache:
+          key: cypress-{{ .Branch }}-{{ .Revision }}
+      - attach_workspace:
+          at: /tmp/urls
+      # make sure we have the binary
+      - run: ls -l /tmp/urls/cypress.zip
+      # make sure we have the NPM package
+      - run: ls -l /tmp/urls/cypress.tgz
+      - run:
+          name: Cloning test project
+          command: git clone https://github.com/cypress-io/cypress-test-tiny.git /tmp/cypress-test-tiny
+      - run:
+          name: Install Cypress
+          working_directory: /tmp/cypress-test-tiny
+          # force installing the freshly built binary
+          command: CYPRESS_INSTALL_BINARY=/tmp/urls/cypress.zip npm i /tmp/urls/cypress.tgz
+      - run:
+          name: Run test project
+          working_directory: /tmp/cypress-test-tiny
+          command: |
+            CYPRESS_ENV=staging \
+            CYPRESS_PROJECT_ID=$TEST_TINY_PROJECT_ID \
+            CYPRESS_RECORD_KEY=$TEST_TINY_RECORD_KEY \
+            $(npm bin)/cypress run --record
+
+workflows:
+  version: 2
+  build_and_test:
+    jobs:
+      - build
+      - lint:
+          requires:
+            - build
+      - unit-tests:
+          requires:
+            - build
+      - server-unit-tests:
+          requires:
+            - build
+      - server-integration-tests:
+          requires:
+            - build
+      - server-e2e-tests-1:
+          requires:
+            - build
+      - server-e2e-tests-2:
+          requires:
+            - build
+      - server-e2e-tests-3:
+          requires:
+            - build
+      - server-e2e-tests-4:
+          requires:
+            - build
+      - server-e2e-tests-5:
+          requires:
+            - build
+      - server-e2e-tests-6:
+          requires:
+            - build
+      - server-e2e-tests-7:
+          requires:
+            - build
+      - driver-integration-tests-1:
+          requires:
+            - build
+      - driver-integration-tests-2:
+          requires:
+            - build
+      - driver-integration-tests-3:
+          requires:
+            - build
+      - driver-integration-tests-4:
+          requires:
+            - build
+      - driver-integration-tests-5:
+          requires:
+            - build
+      - driver-integration-tests-6:
+          requires:
+            - build
+      - driver-integration-tests-7:
+          requires:
+            - build
+      - desktop-gui-integration-tests-1:
+          requires:
+            - build
+      - desktop-gui-integration-tests-2:
+          requires:
+            - build
+      - desktop-gui-integration-tests-3:
+          requires:
+            - build
+      - run-launcher:
+          requires:
+            - build
+      - test-against-staging:
+          filters:
+            branches:
+              only:
+                - develop
+          requires:
+            - build
+      - test-kitchensink-against-staging:
+          filters:
+            branches:
+              only:
+                - develop
+          requires:
+            - build
+      - build-npm-package:
+          filters:
+            branches:
+              only:
+                - develop
+          requires:
+            - build
+      - build-binary:
+          filters:
+            branches:
+              only:
+                - develop
+          requires:
+            - build
+      - test-next-version:
+          filters:
+            branches:
+              only:
+                - develop
+          requires:
+            - build-npm-package
+            - build-binary
+      - test-next-version-locally:
+          filters:
+            branches:
+              only:
+                - develop
+          requires:
+            - build-npm-package
+            - build-binary
+      - test-binary-against-staging:
+          filters:
+            branches:
+              only:
+                - develop
+          requires:
+            - build-npm-package
+            - build-binary

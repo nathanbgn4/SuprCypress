@@ -1,0 +1,48 @@
+.DS_Store
+bower_components
+node_modules
+*.log
+*.log.*
+*.orig
+dist
+dist-*
+build
+.history
+.vscode
+.publish
+_test-output
+cypress.zip
+tmp/
+.nyc_output
+
+# from extension
+Cached Theme.pak
+Cached Theme Material Design.pak
+
+# from https-proxy project
+packages/https-proxy/ca/
+
+# from desktop-gui
+packages/desktop-gui/src/jsconfig.json
+
+# from example
+packages/example/app
+packages/example/build
+packages/example/cypress/screenshots
+packages/example/cypress/videos
+packages/example/cypress/fixtures/profile.json
+packages/example/cypress/fixtures/users.json
+
+# from server
+packages/server/.cy
+packages/server/.projects
+packages/server/support
+packages/server/test/support/fixtures/server/libs
+
+# CLI tool
+cli/build
+
+# Building app binary
+scripts/support
+package-lock.json
+binary-url.json
